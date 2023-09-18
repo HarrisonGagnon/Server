@@ -18,7 +18,7 @@ abstract class Server(
 {
     // Constants
     protected val debugPrint = { message: String ->
-        if(this.isQuiet) {
+        if(!this.isQuiet) {
             println(message)
         }
     }

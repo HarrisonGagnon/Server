@@ -1,5 +1,7 @@
 package com.example.tpserver.server
 
+import server.ThreadPoolServer
+import java.io.InputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.net.SocketAddress
@@ -7,7 +9,7 @@ import kotlin.concurrent.thread
 
 /**
  * Compare performance of different server implementations
- * @param serversAddresses Address of servers to
+ * @param serversAddresses Socket addresses of servers to test
  */
 fun testServers(serversAddresses: Array<SocketAddress>){
 
@@ -19,7 +21,7 @@ fun testServers(serversAddresses: Array<SocketAddress>){
 
 /**
  * Test performance of given server
- * @param serverAddress Address of the server to test
+ * @param serverAddress Socket address of the server to test
  * @param cliPortStart Start of range of 1000 ports that will be used during testing
  */
 private fun testServer(serverAddress: SocketAddress, cliPortStart: Int = 9000) {

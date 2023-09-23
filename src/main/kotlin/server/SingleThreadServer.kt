@@ -1,23 +1,24 @@
-package com.example.tpserver.server
+package server
 
 import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
 import java.net.*
 
 class SingleThreadServer(
     port: Int = 6161,
     address: InetAddress? = null,
-    isQuiet: Boolean
+    isQuiet: Boolean = true
 ):
-// Extends
+    // Extends
     Server(
         port = port,
         address = address,
         isQuiet = isQuiet
     )
 {
-    // Interface implementation methods
+    // Private fields
+    private lateinit var clientConnection: ClientConnection
+
+    // Abstraction implementations
     /**
      *  Server thread that opens server socket on specified port
      *  and listens for clients
@@ -36,6 +37,8 @@ class SingleThreadServer(
                 processClientRequest(clientSocket)
             }
             catch (e: Exception) {
+
+                e.message?.let { debugPrint(it) }
                 if (isStopped()) {
                     debugPrint("Server is stopped and cannot listen for clients")
                 }
@@ -47,44 +50,38 @@ class SingleThreadServer(
     }
 
     private fun processClientRequest(socket: Socket) {
-        // Get and Set socket fields
-        val input: InputStream
-        val output: OutputStream
-        try {
-            // Get socket I/O
-            input = socket.getInputStream()
-            output = socket.getOutputStream()
+        // Set client connection
+        clientConnection = ClientConnection(socket)
 
+        // Configure client socket
+        try {
             // Set socket configuration
             socket.soTimeout = 1000 * 5 // timeout in milliseconds
         }
         catch (e: SocketException) {
-            closeConnection(socket, "Could not configure client socket due to protocol error")
+            closeConnection("Could not configure client socket due to protocol error")
             return
         }
 
-        // Get connection start time
-        val startTime = System.currentTimeMillis()
-        debugPrint("Client connected: $startTime")
-        debugPrint("IP Address: ${socket.inetAddress.hostName}")
-
-       // Main client logic
+        // Main client logic
+        var helloSent = false
         while (!socket.isClosed) {
             try {
-                // Check for disconnection
-                output.write(0)
-                output.flush()
+                if (!helloSent) {
+                    // Server hello
+                    clientConnection.output!!.write("HTTP/1.1 200 OK\n\n Hello client!".toByteArray())
+                    helloSent = true
+                }
 
                 // Read socket input byte by byte
-                val byte = input.read()
+                val byte = clientConnection.input!!.read()
                 if (byte == -1) {
-                    closeConnection(socket, "Client timed out: ${socket.inetAddress.hostName}")
+                    closeConnection("Client timed out")
                     return
                 }
                 else
                 {
                     // TODO: Handle clients
-                    socket.getOutputStream().write(0x01)
 
                     debugPrint("Received $byte")
                 }
@@ -105,35 +102,21 @@ class SingleThreadServer(
                     }
                 }
                 // Close client connection
-                closeConnection(socket, closeMessage)
+                closeConnection(closeMessage)
                 return
             }
-
         }
 
         // Get connection end time
-        val endTime = System.currentTimeMillis()
-        closeConnection(socket, "Client session successfully closed. Connection time ${endTime - startTime}")
+        closeConnection("Client session successfully closed")
     }
 
     /**
      * Gracefully close client connection
      */
-    private fun closeConnection(socket:Socket, message: String) {
-        try {
-            // Close socket IO streams
-            socket.getInputStream().close()
-            socket.getOutputStream().close()
+    private fun closeConnection(message: String) {
 
-
-            // Close socket and print reason for closing
-            socket.close()
-        }
-        catch (e: IOException) {
-            debugPrint(e.message.toString())
-        }
-
-        // Print why the socket is being closed
+        clientConnection.close()
         debugPrint(message)
     }
 }

@@ -1,15 +1,13 @@
-package com.example.tpserver.server
+package server
 
 import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
 import java.net.*
 import java.util.concurrent.*
 
 class ThreadPoolServer(
     port: Int = 6161,
     address: InetAddress? = null,
-    isQuiet: Boolean
+    isQuiet: Boolean = true
 ):
     // Extends
     Server(
@@ -18,11 +16,11 @@ class ThreadPoolServer(
         isQuiet = isQuiet
     )
 {
-    // Private Fields
+    // Private fields
     private var threadPool = Executors.newFixedThreadPool(Runtime.getRuntime().availableProcessors())
     private var clients = ConcurrentHashMap<ClientHandler, Future<*>>()
 
-    // Implementation methods
+    // Abstraction implementations
     /**
      *  Server thread that opens server socket on specified port
      *  and listens for clients
@@ -95,9 +93,13 @@ class ThreadPoolServer(
      * @param oldClient Client that will be removed
      */
     @Synchronized
-    private fun removeClient(oldClient: ClientHandler)
+    private fun removeClient(oldClient: Pair<ClientHandler, Future<*>?>)
     {
-        clients.remove(oldClient)
+        if (oldClient.second?.isDone == false) {
+            debugPrint("Removing client that did not finish! Client: ${oldClient.first.socket.inetAddress.hostName}")
+        }
+
+        clients.remove(oldClient.first)
     }
 
 
@@ -105,18 +107,26 @@ class ThreadPoolServer(
      * Handles client sockets connected to the server
      */
     private inner class ClientHandler(
-        var socket: Socket
+        socket: Socket
     ): Runnable {
-        override fun run() {
-            // Get and Set socket fields
-            val input: InputStream
-            val output: OutputStream
-            try {
-                // Get socket I/O
-                input = socket.getInputStream()
-                output = socket.getOutputStream()
+        // Private fields
+        val connection = ClientConnection(socket)
 
-                // Set socket configuration
+        // Public fields
+        val socket = socket
+
+        override fun run() {
+            // Create client connection
+            val connection = ClientConnection(socket)
+
+            // Determine if connection was established
+            if (!connection.getOpened()) {
+                closeConnection("Could not establish client socket I/O streams")
+                return
+            }
+
+            // Configure socket
+            try {
                 socket.soTimeout = 1000 * 5 // timeout in milliseconds
             }
             catch (e: SocketException) {
@@ -124,28 +134,25 @@ class ThreadPoolServer(
                 return
             }
 
-            // Get connection start time
-            val startTime = System.currentTimeMillis()
-            debugPrint("Client connected: $startTime")
-            debugPrint("IP Address: ${socket.inetAddress.hostName}")
-
-           // Main client logic
+            // Main client logic
+            var helloSent = false
             while (!socket.isClosed) {
                 try {
-                    // Check for disconnection
-                    output.write(0)
-                    output.flush()
+                    if (!helloSent) {
+                        // Server hello
+                        connection.output!!.write("HTTP/1.1 200 OK\n\n Hello client!".toByteArray())
+                        helloSent = true
+                    }
 
                     // Read socket input byte by byte
-                    val byte = input.read()
+                    val byte = connection.input!!.read()
                     if (byte == -1) {
-                        closeConnection("Client timed out: ${socket.inetAddress.hostName}")
+                        closeConnection("Client timed out")
                         return
                     }
                     else
                     {
                         // TODO: Handle clients
-                        socket.getOutputStream().write(0x01)
 
                         debugPrint("Received $byte")
                     }
@@ -172,33 +179,18 @@ class ThreadPoolServer(
 
             }
 
-            // Get connection end time
-            val endTime = System.currentTimeMillis()
-            closeConnection("Client session successfully closed. Connection time ${endTime - startTime}")
+            // Close connection then remove this client from the server's client list
+            closeConnection("Client session successfully closed.")
         }
 
         /**
-         * Gracefully close client connection
+         * Close client connection then remove client from client list
          */
         private fun closeConnection(message: String) {
-            try {
-                // Close socket IO streams
-                socket.getInputStream().close()
-                socket.getOutputStream().close()
 
-
-                // Close socket and print reason for closing
-                socket.close()
-            }
-            catch (e: IOException) {
-                debugPrint(e.message.toString())
-            }
-
-            // Print why the socket is being closed
+            connection.close()
             debugPrint(message)
-
-            // Remove this client from the server's client list
-            removeClient(this)
+            removeClient(Pair(this, clients[this]))
         }
     }
 }
